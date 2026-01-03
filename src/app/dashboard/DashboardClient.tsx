@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 type ImportType = "FLA" | "FLQA";
+type FilterType = "ALL" | "FLA" | "FLQA" | "AT_RISK" | "ALMOST";
 
 export default function DashboardClient({ type }: { type: ImportType }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("ALL");
+  const [filter, setFilter] = useState<FilterType>("ALL");
   const [q, setQ] = useState("");
 
   useEffect(() => {
@@ -27,14 +28,50 @@ export default function DashboardClient({ type }: { type: ImportType }) {
   }, [type]);
 
   const rows = data?.rows ?? [];
+
   const filtered = useMemo(() => {
     let r = rows;
 
-    if (filter !== "ALL") r = r.filter((x: any) => x.status === filter);
+    switch (filter) {
+      case "FLA":
+        r = r.filter((x: any) => x.__okta?.okta_fla_total);
+        break;
+      case "FLQA":
+        r = r.filter((x: any) => x.__okta?.okta_flqa_total);
+        break;
+      case "AT_RISK":
+        r = r.filter((x: any) => x.__okta?.okta_at_risk);
+        break;
+      case "ALMOST":
+        r = r.filter((x: any) => x.__okta?.okta_almost);
+        break;
+      case "ALL":
+      default:
+        r = r.filter(
+          (x: any) =>
+            x.__okta?.okta_fla_total ||
+            x.__okta?.okta_flqa_total ||
+            x.__okta?.okta_at_risk ||
+            x.__okta?.okta_almost
+        );
+    }
 
     if (q.trim()) {
       const needle = q.trim().toLowerCase();
-      r = r.filter((x: any) => String(x.agent_key).toLowerCase().includes(needle));
+      r = r.filter((x: any) => {
+        const hay = [
+          x.full_name,
+          x.agent_id,
+          x.email,
+          x.market,
+          x.agent_key,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return hay.includes(needle);
+      });
     }
 
     return r.slice(0, 300);
@@ -48,30 +85,32 @@ export default function DashboardClient({ type }: { type: ImportType }) {
 
   return (
     <section className="space-y-4">
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-        <Kpi title="Total" value={k.total} />
-        <Kpi title="Eligible" value={k.eligible} />
-        <Kpi title="Active" value={k.active} />
-        <Kpi title="At risk" value={k.at_risk} />
-        <Kpi title="Almost" value={k.almost} />
-        <Kpi title="In FLQA file" value={k.in_flqa_file} />
-        <Kpi title="Qualifies not in FLQA" value={k.qualifies_not_in_flqa} />
-        <Kpi title="In FLQA not qualify" value={k.in_flqa_not_qualify} />
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}
+      >
+        <Kpi title="FLA Total" value={k.fla_total} />
+        <Kpi title="FLQA Total" value={k.flqa_total} />
+        <Kpi title="FLQA At Risk" value={k.flqa_at_risk} />
+        <Kpi title="Almost FLQA" value={k.almost_flqa} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <select className="border rounded px-2 py-1" value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="ALL">ALL</option>
-          <option value="FLA_ONLY">FLA_ONLY</option>
-          <option value="FLQA_ELIGIBLE">FLQA_ELIGIBLE</option>
-          <option value="FLQA_ACTIVE">FLQA_ACTIVE</option>
-          <option value="FLQA_AT_RISK">FLQA_AT_RISK</option>
-          <option value="ALMOST_FLQA">ALMOST_FLQA</option>
+        <select
+          className="border rounded px-2 py-1"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as FilterType)}
+        >
+          <option value="ALL">All</option>
+          <option value="FLA">FLA</option>
+          <option value="FLQA">FLQA</option>
+          <option value="AT_RISK">At Risk</option>
+          <option value="ALMOST">Almost FLQA</option>
         </select>
 
         <input
           className="border rounded px-2 py-1"
-          placeholder="search agent_key…"
+          placeholder="search name, id, email, market…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -81,29 +120,36 @@ export default function DashboardClient({ type }: { type: ImportType }) {
         <table className="w-full text-sm">
           <thead className="border-b">
             <tr>
-              <th className="text-left p-2">agent_key</th>
-              <th className="text-left p-2">status</th>
-              <th className="text-left p-2">eligible</th>
-              <th className="text-left p-2">gci_6m</th>
-              <th className="text-left p-2">tx_6m</th>
-              <th className="text-left p-2">expires</th>
-              <th className="text-left p-2">days</th>
-              <th className="text-left p-2">in_fla</th>
-              <th className="text-left p-2">in_flqa</th>
+              <th className="text-left p-2">Nome</th>
+              <th className="text-left p-2">Agent ID</th>
+              <th className="text-left p-2">Status</th>
+              <th className="text-left p-2">GCI (6M)</th>
+              <th className="text-left p-2">TX (6M)</th>
+              <th className="text-left p-2">Expires</th>
+              <th className="text-left p-2">Days</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((r: any) => (
               <tr key={r.agent_key} className="border-b">
-                <td className="p-2 font-mono">{r.agent_key}</td>
-                <td className="p-2">{r.status}</td>
-                <td className="p-2">{r.eligible_now ? "yes" : "no"}</td>
+                <td className="p-2">
+                  <div className="font-medium">{r.full_name ?? "—"}</div>
+                  <div className="text-xs opacity-70 font-mono">{r.agent_key}</div>
+                </td>
+                <td className="p-2 font-mono">{r.agent_id ?? "—"}</td>
+                <td className="p-2">
+                  {r.__okta?.okta_at_risk
+                    ? "FLQA • At Risk"
+                    : r.__okta?.okta_flqa_total
+                    ? "FLQA"
+                    : r.__okta?.okta_almost
+                    ? "FLA • Almost"
+                    : "FLA"}
+                </td>
                 <td className="p-2">{r.gci_6m ?? ""}</td>
                 <td className="p-2">{r.tx_6m ?? ""}</td>
                 <td className="p-2">{r.flqa_expires ?? ""}</td>
                 <td className="p-2">{r.days_to_expire ?? ""}</td>
-                <td className="p-2">{r.in_fla ? "yes" : "no"}</td>
-                <td className="p-2">{r.in_flqa ? "yes" : "no"}</td>
               </tr>
             ))}
           </tbody>

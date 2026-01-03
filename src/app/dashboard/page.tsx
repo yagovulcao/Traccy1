@@ -1,11 +1,11 @@
 import DashboardClient from "./DashboardClient";
 
-export default function DashboardPage({
-  searchParams,
-}: {
-  searchParams: { type?: string };
+export default async function DashboardPage(props: {
+  searchParams?: Promise<{ type?: string }>;
 }) {
-  const type = (searchParams.type === "FLQA" ? "FLQA" : "FLA") as "FLA" | "FLQA";
+  const sp = (await props.searchParams) ?? {};
+  const type = (sp.type === "FLQA" ? "FLQA" : "FLA") as "FLA" | "FLQA";
+
   return (
     <main className="p-6 space-y-6">
       <header className="flex items-center justify-between">
