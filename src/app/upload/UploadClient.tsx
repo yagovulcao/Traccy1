@@ -18,55 +18,60 @@ export default function UploadClient() {
     setLog("");
 
     try {
-      // 1) signed upload
-      setLog("Gerando signed upload URL…");
-      const signed = await fetch("/api/imports/signed-upload", {
+      // 1) Upload via backend (/api/import)
+      setLog("Uploading file…");
+
+      const form = new FormData();
+      form.append("type", type);
+      form.append("file", file);
+
+      const importRes = await fetch("/api/import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, fileName: file.name }),
-      }).then((r) => r.json());
-
-      if (signed.error) throw new Error(signed.error);
-
-      // 2) upload to signed url
-      setLog("Enviando arquivo para Storage…");
-      const upRes = await fetch(signed.signed_url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": file.type || "text/csv",
-        },
-        body: file,
+        body: form,
       });
 
-      if (!upRes.ok) {
-        const txt = await upRes.text().catch(() => "");
-        throw new Error(`Upload failed: ${upRes.status} ${txt}`);
+      const importText = await importRes.text();
+      let imported: any;
+      try {
+        imported = JSON.parse(importText);
+      } catch {
+        throw new Error(
+          `API /api/import returned non-JSON (${importRes.status}): ${importText.slice(
+            0,
+            120
+          )}...`
+        );
       }
 
-      // 3) create import row
-      setLog("Registrando import no banco…");
-      const created = await fetch("/api/imports/create", {
+      if (!importRes.ok || imported?.error) {
+        throw new Error(imported?.error ?? `Upload failed (${importRes.status}).`);
+      }
+
+      // 2) Process latest
+      setLog("Processing latest…");
+      const processedRes = await fetch(`/api/process/latest?type=${type}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          file_name: file.name,
-          storage_path: signed.storage_path,
-        }),
-      }).then((r) => r.json());
+      });
 
-      if (created.error) throw new Error(created.error);
+      const processedText = await processedRes.text();
+      let processed: any;
+      try {
+        processed = JSON.parse(processedText);
+      } catch {
+        throw new Error(
+          `API /api/process/latest returned non-JSON (${processedRes.status}): ${processedText.slice(
+            0,
+            120
+          )}...`
+        );
+      }
 
-      // 4) process latest
-      setLog("Processando latest…");
-      const processed = await fetch(`/api/process/latest?type=${type}`, {
-        method: "POST",
-      }).then((r) => r.json());
-
-      if (processed.error) throw new Error(processed.error);
+      if (!processedRes.ok || processed?.error) {
+        throw new Error(processed?.error ?? `Process failed (${processedRes.status}).`);
+      }
 
       setLog(
-        `OK ✅ import_id=${processed.import_id} snapshot_id=${processed.snapshot_id} rows=${processed.rows} diff_events=${processed.diff_events}`
+        `OK ✅ import: ${imported.path ?? "(no path)"} | processed: import_id=${processed.import_id} snapshot_id=${processed.snapshot_id} rows=${processed.rows} diff_events=${processed.diff_events}`
       );
     } catch (e: any) {
       setLog(`Erro ❌ ${e?.message ?? String(e)}`);
